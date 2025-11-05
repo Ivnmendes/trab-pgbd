@@ -44,34 +44,24 @@ Usando o arquivo `settings_base.py` como base, crie um novo arquivo chamado `set
 
 #### 5.1 Criar o Banco de Dados
 
-No terminal MySQL, execute o seguinte comando para criar o banco de dados:
+Use o arquivo `scripts/trab1-pgbd.sql` para criar o banco de dados e os usuários necessários. Você pode executar o script SQL usando o cliente MySQL:
 
-```sql
-CREATE DATABASE bdedica;
+```bash
+mysql -u root -p < scripts/trab1-pgbd.sql
 ```
 
-#### 5.2 Criar o usuário dedicado
+#### 5.2 Atualizar o settings.py
 
-No terminal MySQL, execute o seguinte comando para criar o usuário e conceder as permissões necessárias:
-
-```sql
-CREATE USER 'bdedica_user'@'localhost' IDENTIFIED WITH mysql_native_password BY 'senha';
-GRANT ALL PRIVILEGES ON bdedica.* TO 'bdedica_user'@'localhost';
-FLUSH PRIVILEGES;
-```
-
-#### 5.3 Atualizar o settings.py
-
-No arquivo `settings.py`, atualize as configurações do banco de dados com as credenciais do usuário criado:
+No arquivo `settings.py`, atualize as configurações do banco de dados com as credenciais do usuário criado (normalmente só copiar e colar de `settings_base.py`):
 
 ```python
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'projeto_db',            # O nome do DB que você criou
-        'USER': 'django_user',           # O novo usuário que você criou
-        'PASSWORD': 'sua_senha_forte',   # A senha do novo usuário
-        'HOST': 'localhost',             # Onde o MySQL está rodando
+        'NAME': 'projeto_db',            
+        'USER': 'django_user',           
+        'PASSWORD': 'sua_senha_forte',   
+        'HOST': 'localhost',             
         'PORT': '3306',
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
@@ -86,6 +76,8 @@ DATABASES = {
 python manage.py migrate
 ```
 
+Execute sempre que houver mudanças nos modelos/no início do projeto. Sempre após criar as migrations.
+
 ### 7. Desenvolvimento
 
 #### 7.1 Criar migrations
@@ -94,15 +86,7 @@ python manage.py migrate
 python manage.py makemigrations
 ```
 
-Execute sempre que houver mudanças nos modelos.
-
-#### 7.3 Criar um superusuário
-
-```bash
-python manage.py createsuperuser
-```
-
-Necessário para acessar o painel admin do Django.
+Execute sempre que houver mudanças nos modelos/no início do projeto.
 
 #### 7.4 Rodar o Servidor de Desenvolvimento
 
@@ -115,3 +99,7 @@ python manage.py runserver
 ```bash
 python manage.py startapp nome_do_modulo
 ```
+
+### 8. Doc da api
+
+[Clique aqui](DOC.md)

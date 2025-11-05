@@ -43,7 +43,7 @@ FOREIGN KEY (id_mse) REFERENCES mse(id));
 
 -- 2.1. USUÁRIO ORIENTADOR --
 DROP USER if exists 'orientador'@localhost;
-CREATE USER 'orientador'@localhost IDENTIFIED BY '1234';
+CREATE USER 'orientador'@localhost IDENTIFIED WITH mysql_native_password BY '1234';
 GRANT SELECT, INSERT, UPDATE ON bdedica.relatorio TO 'orientador'@localhost;
 GRANT SELECT ON bdedica.adolescente TO 'orientador'@localhost;
 GRANT SELECT (id, nome, cargo) ON bdedica.usuario TO 'orientador'@localhost;
@@ -52,7 +52,7 @@ FLUSH PRIVILEGES;
 
 -- 2.2. USUÁRIO COORDENADOR --
 DROP USER if exists 'coordenador'@localhost;
-CREATE USER 'coordenador'@localhost IDENTIFIED BY '4321';
+CREATE USER 'coordenador'@localhost IDENTIFIED WITH mysql_native_password BY '4321';
 GRANT SELECT, UPDATE, DELETE ON bdedica.* TO 'coordenador'@localhost;
 GRANT INSERT ON bdedica.usuario TO 'coordenador'@localhost;
 GRANT INSERT ON bdedica.mse TO 'coordenador'@localhost;
@@ -61,11 +61,23 @@ FLUSH PRIVILEGES;
 
 -- 2.3. USUÁRIO JIJ --
 DROP USER if exists 'jij'@localhost;
-CREATE USER 'jij'@localhost IDENTIFIED BY '2143';
+CREATE USER 'jij'@localhost IDENTIFIED WITH mysql_native_password BY '2143';
 GRANT SELECT, UPDATE on bdedica.relatorio TO 'jij'@localhost;
 GRANT SELECT on bdedica.adolescente TO 'jij'@localhost;
 GRANT SELECT, UPDATE on bdedica.mse TO 'jij'@localhost;
 GRANT SELECT (id, nome, cargo) ON bdedica.usuario TO 'jij'@localhost;
+FLUSH PRIVILEGES;
+
+-- 2.4. USUÁRIO AUTENTICAÇÂO --
+DROP USER if exists 'autenticacao'@localhost;
+CREATE USER 'autenticacao'@localhost IDENTIFIED WITH mysql_native_password BY '4312';
+GRANT SELECT ON bdedica.usuario TO 'autenticacao'@localhost;
+FLUSH PRIVILEGES;
+
+-- 2.5. USUÁRIO ADMINISTRADOR --
+DROP USER if exists 'admin'@localhost;
+CREATE USER 'admin'@localhost IDENTIFIED WITH mysql_native_password BY 'django_admin_pass';
+GRANT ALL PRIVILEGES ON bdedica.* TO 'admin'@localhost;
 FLUSH PRIVILEGES;
 
 -- 3. FUNCTIONS --
