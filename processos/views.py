@@ -159,7 +159,7 @@ class ProcessoViewSet(viewsets.ViewSet):
         GET /api/processos/
         Lista todos os processos.
         """
-        query = "SELECT id, id_template, id_usuario, status, data_inicio FROM processo"
+        query = "SELECT id, id_template, id_usuario, status_proc, data_inicio FROM processo"
         try:
             with get_read_connection().cursor() as cursor:
                 cursor.execute(query)
@@ -178,14 +178,14 @@ class ProcessoViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "INSERT INTO processo (id_template, id_usuario, status, data_inicio) VALUES (%s, %s, %s, %s)"
+        query = "INSERT INTO processo (id_template, id_usuario, status_proc, data_inicio) VALUES (%s, %s, %s, %s)"
 
         try:
             with get_admin_connection().cursor() as cursor:
                 cursor.execute(query, [
                     data['id_template'],
                     data['id_usuario'],
-                    data['status'],
+                    data['status_proc'],
                     data['data_inicio']
                 ])
                 new_id = cursor.lastrowid
@@ -202,7 +202,7 @@ class ProcessoViewSet(viewsets.ViewSet):
         GET /api/processos/<pk>/
         Busca um processo específico.
         """
-        query = "SELECT id, id_template, id_usuario, status, data_inicio FROM processo WHERE id = %s"
+        query = "SELECT id, id_template, id_usuario, status_proc, data_inicio FROM processo WHERE id = %s"
         try:
             with get_read_connection().cursor() as cursor:
                 cursor.execute(query, [pk])
@@ -215,7 +215,7 @@ class ProcessoViewSet(viewsets.ViewSet):
                 'id': processo[0],
                 'id_template': processo[1],
                 'id_usuario': processo[2],
-                'status': processo[3],
+                'status_proc': processo[3],
                 'data_inicio': processo[4]
             }
             return Response(data, status=status.HTTP_200_OK)
@@ -232,14 +232,14 @@ class ProcessoViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "UPDATE processo SET id_template = %s, id_usuario = %s, status = %s, data_inicio = %s WHERE id = %s"
+        query = "UPDATE processo SET id_template = %s, id_usuario = %s, status_proc = %s, data_inicio = %s WHERE id = %s"
 
         try:
             with get_admin_connection().cursor() as cursor:
                 cursor.execute(query, [
                     data['id_template'],
                     data['id_usuario'],
-                    data['status'],
+                    data['status_proc'],
                     data['data_inicio'],
                     pk
                 ])
@@ -258,8 +258,6 @@ class ProcessoViewSet(viewsets.ViewSet):
         query = "DELETE FROM processo WHERE id = %s"
         
         try:
-            delete_campos_by_exec_etapa(pk)
-            delete_execucao_etapa_by_processo(pk)
             with get_admin_connection().cursor() as cursor:
                 cursor.execute(query, [pk])
                 if cursor.rowcount == 0:
@@ -524,7 +522,7 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
         GET /api/processos/execucoes/
         Lista todas as execuções de etapas.
         """
-        query = "SELECT id, id_processo, id_etapa, id_usuario FROM execucao_etapa"
+        query = "SELECT id, id_processo, id_etapa, id_usuario, observacoes, data_inicio, data_fim, status FROM execucao_etapa"
         try:
             with get_read_connection().cursor() as cursor:
                 cursor.execute(query)
@@ -543,14 +541,18 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "INSERT INTO execucao_etapa (id_processo, id_etapa, id_usuario) VALUES (%s, %s, %s)"
+        query = "INSERT INTO execucao_etapa (id_processo, id_etapa, id_usuario, observacoes, data_inicio, data_fim, status) VALUES (%s, %s, %s, %s, %s, %s, %s)"
 
         try:
             with get_admin_connection().cursor() as cursor:
                 cursor.execute(query, [
                     data['id_processo'],
                     data['id_etapa'],
-                    data['id_usuario']
+                    data['id_usuario'],
+                    data['observacoes'],
+                    data['data_inicio'],
+                    data['data_fim'],
+                    data['status']
                 ])
                 new_id = cursor.lastrowid
             
@@ -566,7 +568,7 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
         GET /api/processos/execucoes/<pk>/
         Busca uma execução de etapa específica.
         """
-        query = "SELECT id, id_processo, id_etapa, id_usuario FROM execucao_etapa WHERE id = %s"
+        query = "SELECT id, id_processo, id_etapa, id_usuario, observacoes, data_inicio, data_fim, status FROM execucao_etapa WHERE id = %s"
         try:
             with get_read_connection().cursor() as cursor:
                 cursor.execute(query, [pk])
@@ -579,7 +581,11 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
                 'id': execucao[0],
                 'id_processo': execucao[1],
                 'id_etapa': execucao[2],
-                'id_usuario': execucao[3]
+                'id_usuario': execucao[3],
+                'observacoes': execucao[4],
+                'data_inicio': execucao[5],
+                'data_fim': execucao[6],
+                'status': execucao[7]
             }
             return Response(data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -595,7 +601,7 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "UPDATE execucao_etapa SET id_processo = %s, id_etapa = %s, id_usuario = %s WHERE id = %s"
+        query = "UPDATE execucao_etapa SET id_processo = %s, id_etapa = %s, id_usuario = %s, observacoes = %s, data_inicio = %s, data_fim = %s, status = %s WHERE id = %s"
 
         try:
             with get_admin_connection().cursor() as cursor:
@@ -603,6 +609,10 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
                     data['id_processo'],
                     data['id_etapa'],
                     data['id_usuario'],
+                    data['observacoes'],
+                    data['data_inicio'],
+                    data['data_fim'],
+                    data['status'],
                     pk
                 ])
                 if cursor.rowcount == 0:
@@ -644,7 +654,7 @@ class ModeloCampoViewSet(viewsets.ViewSet):
         GET /api/processos/modelos_campos/
         Lista todos os modelos de campos.
         """
-        query = "SELECT id, id_etapa, nome, tipo, obrigatorio FROM modelo_campo"
+        query = "SELECT id, id_etapa, nome_campo, tipo, obrigatorio FROM modelo_campo"
         try:
             with get_read_connection().cursor() as cursor:
                 cursor.execute(query)
@@ -663,13 +673,13 @@ class ModeloCampoViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "INSERT INTO modelo_campo (id_etapa, nome, tipo, obrigatorio) VALUES (%s, %s, %s, %s)"
+        query = "INSERT INTO modelo_campo (id_etapa, nome_campo, tipo, obrigatorio) VALUES (%s, %s, %s, %s)"
 
         try:
             with get_admin_connection().cursor() as cursor:
                 cursor.execute(query, [
                     data['id_etapa'],
-                    data['nome'],
+                    data['nome_campo'],
                     data['tipo'],
                     data['obrigatorio']
                 ])
@@ -687,7 +697,7 @@ class ModeloCampoViewSet(viewsets.ViewSet):
         GET /api/processos/modelos_campos/<pk>/
         Busca um modelo de campo específico.
         """
-        query = "SELECT id, id_etapa, nome, tipo, obrigatorio FROM modelo_campo WHERE id = %s"
+        query = "SELECT id, id_etapa, nome_campo, tipo, obrigatorio FROM modelo_campo WHERE id = %s"
         try:
             with get_read_connection().cursor() as cursor:
                 cursor.execute(query, [pk])
@@ -699,7 +709,7 @@ class ModeloCampoViewSet(viewsets.ViewSet):
             data = {
                 'id': modelo[0],
                 'id_etapa': modelo[1],
-                'nome': modelo[2],
+                'nome_campo': modelo[2],
                 'tipo': modelo[3],
                 'obrigatorio': modelo[4]
             }
@@ -717,13 +727,13 @@ class ModeloCampoViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "UPDATE modelo_campo SET id_etapa = %s, nome = %s, tipo = %s, obrigatorio = %s WHERE id = %s"
+        query = "UPDATE modelo_campo SET id_etapa = %s, nome_campo = %s, tipo = %s, obrigatorio = %s WHERE id = %s"
 
         try:
             with get_admin_connection().cursor() as cursor:
                 cursor.execute(query, [
                     data['id_etapa'],
-                    data['nome'],
+                    data['nome_campo'],
                     data['tipo'],
                     data['obrigatorio'],
                     pk
@@ -767,7 +777,7 @@ class CampoViewSet(viewsets.ViewSet):
         GET /api/processos/campos/
         Lista todos os campos.
         """
-        query = "SELECT id, id_exec_etapa, id_modelo, valor FROM campo"
+        query = "SELECT id, id_modelo, dados FROM campo"
         try:
             with get_read_connection().cursor() as cursor:
                 cursor.execute(query)
@@ -786,14 +796,13 @@ class CampoViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "INSERT INTO campo (id_exec_etapa, id_modelo, valor) VALUES (%s, %s, %s)"
+        query = "INSERT INTO campo (id_modelo, dados) VALUES (%s, %s)"
 
         try:
             with get_admin_connection().cursor() as cursor:
                 cursor.execute(query, [
-                    data['id_exec_etapa'],
                     data['id_modelo'],
-                    data['valor']
+                    data['dados']
                 ])
                 new_id = cursor.lastrowid
             
@@ -809,7 +818,7 @@ class CampoViewSet(viewsets.ViewSet):
         GET /api/processos/campo/<pk>/
         Busca um campo específico.
         """
-        query = "SELECT id, id_exec_etapa, id_modelo, valor FROM campo WHERE id = %s"
+        query = "SELECT id, id_modelo, dados FROM campo WHERE id = %s"
         try:
             with get_read_connection().cursor() as cursor:
                 cursor.execute(query, [pk])
@@ -820,9 +829,8 @@ class CampoViewSet(viewsets.ViewSet):
             
             data = {
                 'id': campo[0],
-                'id_exec_etapa': campo[1],
-                'id_modelo': campo[2],
-                'valor': campo[3]
+                'id_modelo': campo[1],
+                'dados': campo[2]
             }
             return Response(data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -838,14 +846,13 @@ class CampoViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "UPDATE campo SET id_exec_etapa = %s, id_modelo = %s, valor = %s WHERE id = %s"
+        query = "UPDATE campo SET id_modelo = %s, dados = %s WHERE id = %s"
 
         try:
             with get_admin_connection().cursor() as cursor:
                 cursor.execute(query, [
-                    data['id_exec_etapa'],
                     data['id_modelo'],
-                    data['valor'],
+                    data['dados'],
                     pk
                 ])
                 if cursor.rowcount == 0:

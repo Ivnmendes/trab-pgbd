@@ -16,7 +16,7 @@ class ProcessoSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     id_template = serializers.IntegerField()
     id_usuario = serializers.IntegerField()
-    status = serializers.CharField(max_length=50)
+    status_proc = serializers.CharField(max_length=50)
     data_inicio = serializers.DateTimeField()
 
 
@@ -46,7 +46,7 @@ class ModeloCampoSerializer(serializers.Serializer):
     """
     id = serializers.IntegerField(read_only=True)
     id_template = serializers.IntegerField()
-    nome = serializers.CharField(max_length=255)
+    nome_campo = serializers.CharField(max_length=255)
     tipo = serializers.CharField(max_length=100)
     obrigatorio = serializers.BooleanField()
 
@@ -56,7 +56,7 @@ class CampoSerializer(serializers.Serializer):
     Valida os dados para criação e atualização de um CampoPreenchido.
     """
     id = serializers.IntegerField(read_only=True)
-    id_exec_etapa = serializers.IntegerField()
+    id_modelo = serializers.IntegerField()
     dados = serializers.CharField(allow_blank=True, required=False)
 
 
@@ -67,8 +67,8 @@ class ExecucaoEtapaSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     id_processo = serializers.IntegerField()
     id_etapa = serializers.IntegerField()
-    id_usuario_executor = serializers.IntegerField(allow_null=True, required=False)
+    id_usuario = serializers.IntegerField(allow_null=True, required=False)
     observacoes = serializers.CharField(allow_blank=True, required=False)
     data_inicio = serializers.DateTimeField(allow_null=True, required=False)
-    data_conclusao = serializers.DateTimeField(allow_null=True, required=False)
+    data_fim = serializers.DateTimeField(allow_null=True, required=False)
     status = serializers.CharField(max_length=100)
