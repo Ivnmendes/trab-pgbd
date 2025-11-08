@@ -45,7 +45,7 @@ class ModeloCampoSerializer(serializers.Serializer):
     Valida os dados para criação e atualização de um ModeloCampo.
     """
     id = serializers.IntegerField(read_only=True)
-    id_template = serializers.IntegerField()
+    id_etapa = serializers.IntegerField()
     nome_campo = serializers.CharField(max_length=255)
     tipo = serializers.CharField(max_length=100)
     obrigatorio = serializers.BooleanField()
@@ -57,6 +57,7 @@ class CampoSerializer(serializers.Serializer):
     """
     id = serializers.IntegerField(read_only=True)
     id_modelo = serializers.IntegerField()
+    id_exec_etapa = serializers.IntegerField()
     dados = serializers.CharField(allow_blank=True, required=False)
 
 

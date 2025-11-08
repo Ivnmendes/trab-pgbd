@@ -73,7 +73,11 @@ foreign key (id_etapa) references etapa(id)
 create table if not exists campo (
 id bigint primary key auto_increment,
 id_modelo bigint not null,
-dados text);
+id_exec_etapa bigint not null,
+dados text,
+foreign key (id_modelo) references modelo_campo(id),
+foreign key (id_exec_etapa) references execucao_etapa(id)
+);
 
 
 -- 2. CRIANDO USUÁRIOS E PERMISSÕES

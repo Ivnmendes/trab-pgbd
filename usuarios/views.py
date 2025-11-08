@@ -1,4 +1,4 @@
-from django.db import connections, IntegrityError, OperationalError
+from django.db import connection, IntegrityError, OperationalError
 from django.contrib.auth.hashers import make_password
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -6,12 +6,6 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .serializers import CustomTokenObtainPairSerializer, UsuarioCreateSerializer
-
-CARGO_TO_DB_CONNECTION = {
-    'ORIENTADOR': 'orientador_db',
-    'COORDENADOR': 'coordenador_db',
-    'JIJ': 'jij_db',
-}
 
 class UsuarioCreateView(generics.CreateAPIView):
     """
@@ -38,17 +32,8 @@ class UsuarioCreateView(generics.CreateAPIView):
             plain_password
         ]
 
-        user_cargo = request.user.cargo
-        connection_name = CARGO_TO_DB_CONNECTION.get(user_cargo)
-
-        if not connection_name:
-            return Response(
-                {"detail": "Cargo do usuário logado não existe."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
         try:
-            with connections[connection_name].cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(sql, params)
             
             response_data = serializer.validated_data.copy()

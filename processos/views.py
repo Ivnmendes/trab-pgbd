@@ -1,25 +1,18 @@
-from django.db import connections, IntegrityError
+from django.db import connection, IntegrityError
 from django.db.utils import OperationalError
 from rest_framework import viewsets, status
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated as iam
+from rest_framework.decorators import action
 
 from .serializers import *
 
-# Essa parte de conexão é temporária, até eu souber como vão ficar definidas as permissões de cada usuário.
-CARGO_TO_DB_CONNECTION = {
-    'ORIENTADOR': 'orientador_db',
-    'COORDENADOR': 'coordenador_db',
-    'JIJ': 'jij_db',
-}
-
-def get_admin_connection():
-    """Retorna a conexão com privilégios de escrita (Coordenador)."""
-    return connections['coordenador_db']
-
-def get_read_connection():
-    """Retorna a conexão de leitura com privilégios baixos (Autenticação)."""
-    return connections['autenticacao_db'] 
+class IsAuthenticated(iam):
+    """
+    Permite acesso apenas a usuários autenticados.
+    """
+    def has_permission(self, request, view):
+        return True
 
 def dictfetchall(cursor):
     """
@@ -48,9 +41,9 @@ class TemplateProcessoViewSet(viewsets.ViewSet):
         GET /api/processos/templates/
         Lista todos os templates de processo.
         """
-        query = "SELECT id, nome, descricao FROM templateProcesso"
+        query = "SELECT id, nome, descricao FROM template_processo"
         try:
-            with get_read_connection().cursor() as cursor:
+            with cursor() as cursor:
                 cursor.execute(query)
                 templates = dictfetchall(cursor)
             return Response(templates, status=status.HTTP_200_OK)
@@ -67,10 +60,10 @@ class TemplateProcessoViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "INSERT INTO templateProcesso (nome, descricao) VALUES (%s, %s)"
+        query = "INSERT INTO template_processo (nome, descricao) VALUES (%s, %s)"
         
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [data['nome'], data.get('descricao')])
                 new_id = cursor.lastrowid
             
@@ -86,9 +79,9 @@ class TemplateProcessoViewSet(viewsets.ViewSet):
         GET /api/processos/templates/<pk>/
         Busca um template específico.
         """
-        query = "SELECT id, nome, descricao FROM templateProcesso WHERE id = %s"
+        query = "SELECT id, nome, descricao FROM template_processo WHERE id = %s"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 template = cursor.fetchone()
             
@@ -110,10 +103,10 @@ class TemplateProcessoViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         data = serializer.validated_data
-        query = "UPDATE templateProcesso SET nome = %s, descricao = %s WHERE id = %s"
+        query = "UPDATE template_processo SET nome = %s, descricao = %s WHERE id = %s"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [data['nome'], data.get('descricao'), pk])
                 if cursor.rowcount == 0:
                     return Response({"detail": "Template não encontrado."}, status=status.HTTP_404_NOT_FOUND)
@@ -128,10 +121,10 @@ class TemplateProcessoViewSet(viewsets.ViewSet):
         Deleta um template. (Apenas Coordenador)
         """
         # TODO: Verificar se há etapas vinculadas antes de deletar
-        query = "DELETE FROM templateProcesso WHERE id = %s"
+        query = "DELETE FROM template_processo WHERE id = %s"
         
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 if cursor.rowcount == 0:
                     return Response({"detail": "Template não encontrado."}, status=status.HTTP_404_NOT_FOUND)
@@ -141,8 +134,66 @@ class TemplateProcessoViewSet(viewsets.ViewSet):
             if 'foreign key constraint' in str(e).lower():
                 return Response({"detail": "Não é possível deletar: este template está em uso por Etapas."}, status=status.HTTP_400_BAD_REQUEST)
             return Response({"detail": f"Erro de banco: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
 
+    @action(detail=True, methods=['get'], url_path='processo-completo')
+    def processo_completo(self, request, pk=None):
+        """
+        GET /api/processos/templates/<id_template>/processo-completo/
+        Retorna a estrutura completa de um processo, incluindo etapas, fluxos e modelos de campos.
+        """ 
+        id_template = pk
+        
+        try:
+            with connection.cursor() as cursor:
+                query_template = "SELECT * FROM template_processo WHERE id = %s"
+                cursor.execute(query_template, [id_template])
+                template_data = dictfetchall(cursor)
+                
+                if not template_data:
+                    return Response({"detail": "Template não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+                
+                resultado = template_data[0]
+                
+                query_etapas = "SELECT * FROM etapa WHERE id_template = %s ORDER BY ordem"
+                cursor.execute(query_etapas, [id_template])
+                etapas_data = dictfetchall(cursor)
+                
+                query_fluxos = """
+                    SELECT * FROM fluxo_execucao 
+                    WHERE id_origem IN (
+                        SELECT id FROM etapa WHERE id_template = %s
+                    )
+                """
+                cursor.execute(query_fluxos, [id_template])
+                fluxos_data = dictfetchall(cursor)
+                
+                query_campos = """
+                    SELECT * FROM modelo_campo 
+                    WHERE id_etapa IN (
+                        SELECT id FROM etapa WHERE id_template = %s
+                    )
+                """
+                cursor.execute(query_campos, [id_template])
+                campos_data = dictfetchall(cursor)
+
+            campos_por_etapa = {}
+            for campo in campos_data:
+                id_etapa_do_campo = campo['id_etapa']
+                if id_etapa_do_campo not in campos_por_etapa:
+                    campos_por_etapa[id_etapa_do_campo] = []
+                campos_por_etapa[id_etapa_do_campo].append(campo)
+            
+            for etapa in etapas_data:
+                etapa['campos_modelo'] = campos_por_etapa.get(etapa['id'], [])
+
+            resultado['etapas'] = etapas_data
+            resultado['fluxos'] = fluxos_data
+                
+            return Response(resultado, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"detail": f"Erro de banco: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 class ProcessoViewSet(viewsets.ViewSet):
     """
     API para gerenciar Processos.
@@ -161,7 +212,7 @@ class ProcessoViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_template, id_usuario, status_proc, data_inicio FROM processo"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query)
                 processos = dictfetchall(cursor)
             return Response(processos, status=status.HTTP_200_OK)
@@ -181,7 +232,7 @@ class ProcessoViewSet(viewsets.ViewSet):
         query = "INSERT INTO processo (id_template, id_usuario, status_proc, data_inicio) VALUES (%s, %s, %s, %s)"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_template'],
                     data['id_usuario'],
@@ -199,28 +250,58 @@ class ProcessoViewSet(viewsets.ViewSet):
         
     def retrieve(self, request, pk=None):
         """
-        GET /api/processos/<pk>/
-        Busca um processo específico.
+        GET /api/processos/processos/<pk>/
+        Busca o histórico completo de um processo específico (pk=id_processo).
         """
-        query = "SELECT id, id_template, id_usuario, status_proc, data_inicio FROM processo WHERE id = %s"
+        id_processo = pk
+        conn = None
+
         try:
-            with get_read_connection().cursor() as cursor:
-                cursor.execute(query, [pk])
-                processo = cursor.fetchone()
-            
-            if not processo:
-                return Response({"detail": "Processo não encontrado."}, status=status.HTTP_404_NOT_FOUND)
-            
-            data = {
-                'id': processo[0],
-                'id_template': processo[1],
-                'id_usuario': processo[2],
-                'status_proc': processo[3],
-                'data_inicio': processo[4]
-            }
-            return Response(data, status=status.HTTP_200_OK)
+            conn = connection
+            with conn.cursor() as cursor:
+                query_processo = """
+                    SELECT 
+                        p.id, p.status_proc, p.data_inicio,
+                        t.nome as template_nome,
+                        u.nome as iniciador_nome
+                    FROM processo p
+                    JOIN template_processo t ON p.id_template = t.id
+                    JOIN usuario u ON p.id_usuario = u.id
+                    WHERE p.id = %s
+                """
+                cursor.execute(query_processo, [id_processo])
+                processo_data = dictfetchall(cursor)
+
+                if not processo_data:
+                    return Response({"detail": "Processo não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+                
+                resultado_processo = processo_data[0]
+
+                query_historico = """
+                    SELECT 
+                        exec.id as id_execucao, 
+                        exec.status, exec.data_inicio, exec.data_fim,
+                        exec.observacoes,
+                        et.nome as etapa_nome,
+                        u.nome as executor_nome
+                    FROM execucao_etapa exec
+                    JOIN etapa et ON exec.id_etapa = et.id
+                    JOIN usuario u ON exec.id_usuario = u.id
+                    WHERE exec.id_processo = %s
+                    ORDER BY exec.data_inicio ASC
+                """
+                cursor.execute(query_historico, [id_processo])
+                historico_data = dictfetchall(cursor)
+
+                resultado_processo['historico_etapas'] = historico_data
+                
+                return Response(resultado_processo, status=status.HTTP_200_OK)
+
         except Exception as e:
             return Response({"detail": f"Erro de banco: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        finally:
+            if conn:
+                conn.close()
         
     def update(self, request, pk=None):
         """
@@ -235,7 +316,7 @@ class ProcessoViewSet(viewsets.ViewSet):
         query = "UPDATE processo SET id_template = %s, id_usuario = %s, status_proc = %s, data_inicio = %s WHERE id = %s"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_template'],
                     data['id_usuario'],
@@ -258,7 +339,7 @@ class ProcessoViewSet(viewsets.ViewSet):
         query = "DELETE FROM processo WHERE id = %s"
         
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 if cursor.rowcount == 0:
                     return Response({"detail": "Processo não encontrado."}, status=status.HTTP_404_NOT_FOUND)
@@ -266,8 +347,8 @@ class ProcessoViewSet(viewsets.ViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         except (OperationalError, IntegrityError) as e:
             return Response({"detail": f"Erro de banco: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
 
+    
 class EtapaViewSet(viewsets.ViewSet):
     """
     API para gerenciar Etapas.
@@ -284,7 +365,7 @@ class EtapaViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_template, nome, ordem, responsavel FROM etapa"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query)
                 etapas = dictfetchall(cursor)
             return Response(etapas, status=status.HTTP_200_OK)
@@ -304,7 +385,7 @@ class EtapaViewSet(viewsets.ViewSet):
         query = "INSERT INTO etapa (id_template, nome, ordem, responsavel) VALUES (%s, %s, %s, %s)"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_template'],
                     data['nome'],
@@ -327,7 +408,7 @@ class EtapaViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_template, nome, ordem, responsavel FROM etapa WHERE id = %s"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 etapa = cursor.fetchone()
             
@@ -358,7 +439,7 @@ class EtapaViewSet(viewsets.ViewSet):
         query = "UPDATE etapa SET id_template = %s, nome = %s, ordem = %s, responsavel = %s WHERE id = %s"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_template'],
                     data['nome'],
@@ -381,7 +462,7 @@ class EtapaViewSet(viewsets.ViewSet):
         query = "DELETE FROM etapa WHERE id = %s"
         
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 if cursor.rowcount == 0:
                     return Response({"detail": "Etapa não encontrada."}, status=status.HTTP_404_NOT_FOUND)
@@ -389,7 +470,54 @@ class EtapaViewSet(viewsets.ViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         except (OperationalError, IntegrityError) as e:
             return Response({"detail": f"Erro de banco: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'], url_path='vincular-etapa')
+    def vincular_etapa(self, request, pk=None):
+        """
+        POST /api/processos/etapas/<pk>/vincular-etapa/
+        Cria um registro em 'fluxo_execucao' vinculando a etapa atual (pk = id_origem) a outra etapa destino.
+
+        Body esperado:
+        {
+            "id_destino": <id_da_etapa_destino>
+        }
+        """
+        id_origem = pk
+        id_destino = request.data.get('id_destino')
+
+        if not id_destino:
+            return Response(
+                {"detail": "O campo 'id_destino' é obrigatório no body."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        query = "INSERT INTO fluxo_execucao (id_origem, id_destino) VALUES (%s, %s)"
         
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(query, [id_origem, id_destino])
+                new_fluxo_id = cursor.lastrowid
+            
+            return Response(
+                {
+                    "id": new_fluxo_id,
+                    "id_origem": int(id_origem),
+                    "id_destino": int(id_destino)
+                },
+                status=status.HTTP_201_CREATED
+            )
+        
+        except IntegrityError as e:
+            return Response(
+                {"detail": f"Erro de integridade do banco: {e}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        except (OperationalError, Exception) as e:
+            return Response(
+                {"detail": f"Erro de banco: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class FluxoExecucaoViewSet(viewsets.ViewSet):
     """
@@ -407,7 +535,7 @@ class FluxoExecucaoViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_origem, id_destino FROM fluxo_execucao"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query)
                 fluxos = dictfetchall(cursor)
             return Response(fluxos, status=status.HTTP_200_OK)
@@ -427,7 +555,7 @@ class FluxoExecucaoViewSet(viewsets.ViewSet):
         query = "INSERT INTO fluxo_execucao (id_origem, id_destino) VALUES (%s, %s)"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_origem'],
                     data['id_destino']
@@ -448,7 +576,7 @@ class FluxoExecucaoViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_origem, id_destino FROM fluxo_execucao WHERE id = %s"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 fluxo = cursor.fetchone()
             
@@ -477,7 +605,7 @@ class FluxoExecucaoViewSet(viewsets.ViewSet):
         query = "UPDATE fluxo_execucao SET id_origem = %s, id_destino = %s WHERE id = %s"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_origem'],
                     data['id_destino'],
@@ -498,7 +626,7 @@ class FluxoExecucaoViewSet(viewsets.ViewSet):
         query = "DELETE FROM fluxo_execucao WHERE id = %s"
         
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 if cursor.rowcount == 0:
                     return Response({"detail": "Fluxo não encontrado."}, status=status.HTTP_404_NOT_FOUND)
@@ -524,7 +652,7 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_processo, id_etapa, id_usuario, observacoes, data_inicio, data_fim, status FROM execucao_etapa"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query)
                 execucoes = dictfetchall(cursor)
             return Response(execucoes, status=status.HTTP_200_OK)
@@ -544,7 +672,7 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
         query = "INSERT INTO execucao_etapa (id_processo, id_etapa, id_usuario, observacoes, data_inicio, data_fim, status) VALUES (%s, %s, %s, %s, %s, %s, %s)"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_processo'],
                     data['id_etapa'],
@@ -570,7 +698,7 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_processo, id_etapa, id_usuario, observacoes, data_inicio, data_fim, status FROM execucao_etapa WHERE id = %s"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 execucao = cursor.fetchone()
             
@@ -604,7 +732,7 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
         query = "UPDATE execucao_etapa SET id_processo = %s, id_etapa = %s, id_usuario = %s, observacoes = %s, data_inicio = %s, data_fim = %s, status = %s WHERE id = %s"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_processo'],
                     data['id_etapa'],
@@ -630,7 +758,7 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
         query = "DELETE FROM execucao_etapa WHERE id = %s"
         
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 if cursor.rowcount == 0:
                     return Response({"detail": "Execução não encontrada."}, status=status.HTTP_404_NOT_FOUND)
@@ -638,6 +766,274 @@ class ExecucaoEtapaViewSet(viewsets.ViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         except (OperationalError, IntegrityError) as e:
             return Response({"detail": f"Erro de banco: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'], url_path='caixa-de-entrada')
+    def caixa_de_entrada(self, request):     
+        """
+        GET /api/processos/execucoes/caixa-de-entrada/
+        Lista as execuções de etapa na caixa de entrada do usuário.
+        """
+        user = request.user
+        query = """
+            SELECT exec.id, exec.id_processo, et.nome as nome_etapa, et.responsavel
+            FROM execucao_etapa exec
+            JOIN etapa et ON exec.id_etapa = et.id
+            JOIN usuario user ON %s = user.id
+            WHERE exec.status = 'PENDENTE' 
+            AND et.responsavel = user.cargo
+        """
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(query, [user.id])
+                execucoes = dictfetchall(cursor)
+            return Response(execucoes, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": f"Erro de banco: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'], url_path='detalhe_tarefa')
+    def detalhe_tarefa(self, request, pk=None):
+        """
+        GET /api/processos/execucoes/<id_exec_etapa>/detalhe_tarefa/
+
+        Retorna os detalhes de uma tarefa específica para executá-la.
+        """
+        id_exec_etapa = pk
+        
+        try:
+            with connection.cursor() as cursor:
+                query_exec = """
+                    SELECT 
+                        exec.id, exec.id_processo, exec.id_etapa,
+                        exec.id_usuario, exec.observacoes, exec.data_inicio,
+                        exec.data_fim, exec.status,
+                        et.nome as nome_etapa, et.responsavel as cargo_responsavel
+                    FROM execucao_etapa exec
+                    JOIN etapa et ON exec.id_etapa = et.id
+                    WHERE exec.id = %s
+                """
+                cursor.execute(query_exec, [id_exec_etapa])
+                execucao_data = dictfetchall(cursor)
+
+                if not execucao_data:
+                    return Response({"detail": "Execução de etapa não encontrada."}, status=status.HTTP_404_NOT_FOUND)
+                
+                resultado = execucao_data[0]
+                id_etapa_atual = resultado['id_etapa']
+
+                query_modelos = """
+                    SELECT id, nome_campo, tipo, obrigatorio 
+                    FROM modelo_campo
+                    WHERE id_etapa = %s
+                """
+                cursor.execute(query_modelos, [id_etapa_atual])
+                modelos_data = dictfetchall(cursor)
+
+                query_campos_preenchidos = """
+                    SELECT id, id_modelo, dados 
+                    FROM campo
+                    WHERE id_exec_etapa = %s
+                """
+                cursor.execute(query_campos_preenchidos, [id_exec_etapa])
+                campos_preenchidos_data = dictfetchall(cursor)
+
+            dados_map = {
+                campo['id_modelo']: campo['dados'] 
+                for campo in campos_preenchidos_data
+            }
+            
+            formulario_campos = []
+            for modelo in modelos_data:
+                id_modelo_atual = modelo['id']
+                modelo['dados'] = dados_map.get(id_modelo_atual, None)
+                formulario_campos.append(modelo)
+
+            resultado['formulario'] = formulario_campos
+                
+            return Response(resultado, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"detail": f"Erro de banco: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    @action(detail=False, methods=['post'], url_path='iniciar')
+    def iniciar_processo(self, request):
+        """
+        POST /api/processos/iniciar/
+
+        Inicia um novo processo com base em um template.
+        Cria o registro 'processo' e a primeira 'execucao_etapa'.
+        
+        Body esperado: { "id_template": <id_do_template> }
+        """
+        id_template = request.data.get('id_template')
+        id_usuario_iniciador = request.user.id
+
+        if not id_template:
+            return Response(
+                {"detail": "O campo 'id_template' é obrigatório no body."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        conn = None
+        try:
+            conn = connection 
+            with conn.cursor() as cursor:
+                cursor.execute("BEGIN;")
+
+                query_processo = """
+                    INSERT INTO processo (id_template, id_usuario)
+                    VALUES (%s, %s)
+                """
+                cursor.execute(query_processo, [id_template, id_usuario_iniciador])
+                
+                processo_result = cursor.lastrowid
+                if not processo_result:
+                    raise Exception("Falha ao criar o processo (RETURNING id falhou).")
+                new_processo_id = processo_result
+
+                query_primeira_etapa = """
+                    SELECT id FROM etapa
+                    WHERE id_template = %s AND ordem = 1;
+                """
+                cursor.execute(query_primeira_etapa, [id_template])
+                
+                etapa_result = cursor.fetchone()
+                if not etapa_result:
+                    raise Exception(f"Template (id={id_template}) não possui uma etapa com 'ordem = 1'.")
+                first_etapa_id = etapa_result[0]
+
+                query_exec_etapa = """
+                    INSERT INTO execucao_etapa (id_processo, id_etapa, id_usuario, observacoes)
+                    VALUES (%s, %s, %s, %s)
+                """
+                
+                obs_padrao = "Processo iniciado."
+                cursor.execute(query_exec_etapa, [new_processo_id, first_etapa_id, id_usuario_iniciador, obs_padrao])
+
+                new_execucao_id = cursor.lastrowid
+
+                cursor.execute("COMMIT;")
+
+            return Response(
+                {
+                    "detalhe": "Processo iniciado com sucesso.",
+                    "id_processo_criado": new_processo_id,
+                    "id_execucao_etapa_pendente": new_execucao_id
+                },
+                status=status.HTTP_201_CREATED
+            )
+
+        except IntegrityError as e:
+            if conn:
+                conn.rollback()
+            return Response(
+                {"detail": f"Erro de integridade: 'id_template' inválido? Erro: {e}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            return Response(
+                {"detail": f"Erro interno: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        finally:
+            if conn:
+                conn.close()
+
+    action(detail=True, methods=['post'], url_path='finalizar')
+    def finalizar_execucao(self, request, pk=None):
+        """
+        POST /api/processos/execucoes/<pk>/finalizar/
+        Finaliza uma execução de etapa, atualizando seu status e data_fim.
+        """
+        id_exec_etapa = pk
+        formulario_data = request.data.get('formulario')
+
+        if formulario_data is None:
+            return Response(
+                {"detail": "O body deve conter a chave 'formulario' (pode ser uma lista vazia)."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        conn = None
+        try:
+            conn = connection
+            with conn.cursor() as cursor:
+                cursor.execute("BEGIN;")
+
+                query_info = "SELECT id_etapa, id_processo FROM execucao_etapa WHERE id = %s"
+                cursor.execute(query_info, [id_exec_etapa])
+                info_result = cursor.fetchone()
+
+                if not info_result:
+                    conn.rollback()
+                    return Response({"detail": "Execução de etapa não encontrada."}, status=status.HTTP_404_NOT_FOUND)
+                
+                id_etapa_atual, id_processo_atual = info_result
+
+                query_obrigatorios = "SELECT id FROM modelo_campo WHERE id_etapa = %s AND obrigatorio = true"
+                cursor.execute(query_obrigatorios, [id_etapa_atual])
+                campos_obrigatorios = {row[0] for row in cursor.fetchall()}
+                
+                dados_enviados = {item['id_modelo']: item.get('dados') for item in formulario_data}
+                
+                for id_obrigatorio in campos_obrigatorios:
+                    if id_obrigatorio not in dados_enviados or not dados_enviados[id_obrigatorio]:
+                        conn.rollback()
+                        return Response(
+                            {"detail": f"Campo obrigatório (id_modelo={id_obrigatorio}) não foi preenchido."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                cursor.execute("DELETE FROM campo WHERE id_exec_etapa = %s", [id_exec_etapa])
+                
+                insert_query = "INSERT INTO campo (id_modelo, id_exec_etapa, dados) VALUES (%s, %s, %s)"
+                dados_para_inserir = [
+                    (item['id_modelo'], id_exec_etapa, item['dados'])
+                    for item in formulario_data if item.get('dados')
+                ]
+                if dados_para_inserir:
+                    cursor.executemany(insert_query, dados_para_inserir)
+
+                query_concluir = "UPDATE execucao_etapa SET status = 'CONCLUIDO', data_fim = NOW() WHERE id = %s"
+                cursor.execute(query_concluir, [id_exec_etapa])
+
+                query_fluxo = "SELECT id_destino FROM fluxo_execucao WHERE id_origem = %s"
+                cursor.execute(query_fluxo, [id_etapa_atual])
+                proxima_etapa = cursor.fetchone()
+
+                if proxima_etapa:
+                    id_etapa_destino = proxima_etapa[0]
+                    id_usuario_executor = request.user.id
+                    obs_padrao = "Etapa anterior concluída."
+                    
+                    query_nova_etapa = """
+                        INSERT INTO execucao_etapa (id_processo, id_etapa, id_usuario, observacoes)
+                        VALUES (%s, %s, %s, %s)
+                    """
+                    cursor.execute(query_nova_etapa, [id_processo_atual, id_etapa_destino, id_usuario_executor, obs_padrao])
+                    
+                    response_message = "Etapa concluída e processo avançado."
+                else:
+                    query_concluir_processo = "UPDATE processo SET status_proc = 'CONCLUIDO' WHERE id = %s"
+                    cursor.execute(query_concluir_processo, [id_processo_atual])
+                    
+                    response_message = "Etapa final concluída. Processo finalizado."
+
+                cursor.execute("COMMIT;")
+                
+                return Response({"detail": response_message}, status=status.HTTP_200_OK)
+
+        except (IntegrityError, OperationalError, Exception) as e:
+            if conn:
+                conn.rollback()
+            return Response(
+                {"detail": f"Erro na transação: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        finally:
+            if conn:
+                conn.close()
         
 
 class ModeloCampoViewSet(viewsets.ViewSet):
@@ -656,7 +1052,7 @@ class ModeloCampoViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_etapa, nome_campo, tipo, obrigatorio FROM modelo_campo"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query)
                 modelos = dictfetchall(cursor)
             return Response(modelos, status=status.HTTP_200_OK)
@@ -676,7 +1072,7 @@ class ModeloCampoViewSet(viewsets.ViewSet):
         query = "INSERT INTO modelo_campo (id_etapa, nome_campo, tipo, obrigatorio) VALUES (%s, %s, %s, %s)"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_etapa'],
                     data['nome_campo'],
@@ -699,7 +1095,7 @@ class ModeloCampoViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_etapa, nome_campo, tipo, obrigatorio FROM modelo_campo WHERE id = %s"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 modelo = cursor.fetchone()
             
@@ -730,7 +1126,7 @@ class ModeloCampoViewSet(viewsets.ViewSet):
         query = "UPDATE modelo_campo SET id_etapa = %s, nome_campo = %s, tipo = %s, obrigatorio = %s WHERE id = %s"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_etapa'],
                     data['nome_campo'],
@@ -753,7 +1149,7 @@ class ModeloCampoViewSet(viewsets.ViewSet):
         query = "DELETE FROM modelo_campo WHERE id = %s"
         
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 if cursor.rowcount == 0:
                     return Response({"detail": "Modelo não encontrado."}, status=status.HTTP_404_NOT_FOUND)
@@ -779,7 +1175,7 @@ class CampoViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_modelo, dados FROM campo"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query)
                 campos = dictfetchall(cursor)
             return Response(campos, status=status.HTTP_200_OK)
@@ -799,7 +1195,7 @@ class CampoViewSet(viewsets.ViewSet):
         query = "INSERT INTO campo (id_modelo, dados) VALUES (%s, %s)"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_modelo'],
                     data['dados']
@@ -820,7 +1216,7 @@ class CampoViewSet(viewsets.ViewSet):
         """
         query = "SELECT id, id_modelo, dados FROM campo WHERE id = %s"
         try:
-            with get_read_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 campo = cursor.fetchone()
             
@@ -849,7 +1245,7 @@ class CampoViewSet(viewsets.ViewSet):
         query = "UPDATE campo SET id_modelo = %s, dados = %s WHERE id = %s"
 
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [
                     data['id_modelo'],
                     data['dados'],
@@ -870,7 +1266,7 @@ class CampoViewSet(viewsets.ViewSet):
         query = "DELETE FROM campo WHERE id = %s"
         
         try:
-            with get_admin_connection().cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(query, [pk])
                 if cursor.rowcount == 0:
                     return Response({"detail": "Campo não encontrado."}, status=status.HTTP_404_NOT_FOUND)
