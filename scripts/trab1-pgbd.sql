@@ -1,43 +1,80 @@
-create database if not exists bdedica;
-use bdedica;
+create database if not exists bdedica_wf;
+use bdedica_wf;
 
 -- 1. CRIAÇÃO DAS TABELAS -- 
--- 1.1. ADOLESCENTE -- 
-create table if not exists adolescente (
-id int primary key auto_increment,
-nome varchar(100) not null);
-
--- 1.2. USUÁRIO -- 
+-- 1.1. USUÁRIO -- 
 create table if not exists usuario (
-id int primary key auto_increment,
+id bigint primary key auto_increment,
 username varchar(50) not null,
 nome varchar(100) not null,
 cargo enum('ORIENTADOR', 'COORDENADOR', 'JIJ') not null,
 senha varchar(255) not null);
 
--- 1.3. MSE -- 
-create table if not exists mse (
-id int primary key auto_increment,
-id_adolescente int not null,
-id_orientador int not null,
-semanas_totais int not null,
-semanas_restantes int not null,
-status_mse enum('EM_ANDAMENTO', 'CONCLUIDA'),
-foreign key (id_adolescente) references adolescente(id),
-foreign key (id_orientador) references usuario(id));
+-- 1.2. TEMPLATE_PROCESSO -- 
+create table if not exists template_processo (
+id bigint primary key auto_increment,
+nome varchar(100) not null,
+descricao tinytext not null );
 
--- 1.4. RELATÓRIO -- 
-create table if not exists relatorio (
-id int primary key auto_increment,
-id_mse int not null,
-mes varchar(50) not null,
-ano int not null,
-presencas int not null,
-faltas int not null,
-relato text not null,
-observacoes tinytext null,
-status_rel enum('PENDENTE', 'AGUARDA_CORRECOES', 'ENVIADO', 'CONCLUIDO'),
-FOREIGN KEY (id_mse) REFERENCES mse(id));
+-- 1.3. PROCESSO -- 
+create table if not exists processo (
+id bigint primary key auto_increment,
+id_template bigint not null,
+id_usuario bigint not null,
+status_proc enum('PENDENTE', 'CONCLUIDO') default 'PENDENTE' not null,
+data_inicio datetime default NOW() not null,
+foreign key (id_template) references template_processo(id),
+foreign key (id_usuario) references usuario(id));
+
+-- 1.4. ETAPA -- 
+create table if not exists etapa (
+id bigint primary key auto_increment,
+id_template bigint not null,
+nome varchar(100) not null,
+ordem int not null,
+responsavel enum('ORIENTADOR', 'COORDENADOR', 'JIJ'),
+foreign key (id_template) references template_processo(id)
+);
+
+-- 1.5. FLUXO DE EXECUÇÃO DE ETAPAS --
+create table if not exists fluxo_execucao ( 
+id bigint primary key auto_increment,
+id_origem bigint not null,
+id_destino bigint not null,
+foreign key (id_origem) references etapa(id),
+foreign key (id_destino) references etapa(id));
+
+-- 1.6. ETAPAS EM EXECUÇÃO --
+create table if not exists execucao_etapa (
+id bigint primary key auto_increment,
+id_processo bigint not null,
+id_etapa bigint not null,
+id_usuario bigint not null,
+observacoes text not null,
+data_inicio datetime default now() not null,
+data_fim datetime,
+status enum('PENDENTE', 'CONCLUIDO') default 'PENDENTE' not null,
+foreign key (id_processo) references processo(id),
+foreign key (id_etapa) references etapa(id),
+foreign key (id_usuario) references usuario(id)
+);
+
+-- 1.7. MODELO DE CAMPO PARA CADA ETAPA -- 
+create table if not exists modelo_campo (
+id bigint primary key auto_increment,
+id_etapa bigint not null,
+nome_campo varchar(100) not null,
+tipo enum('TEXTO', 'NUMERO', 'DATA', 'ARQUIVO') not null,
+obrigatorio boolean default false,
+foreign key (id_etapa) references etapa(id)
+);
+
+-- 1.8. CAMPO -- 
+create table if not exists campo (
+id bigint primary key auto_increment,
+id_modelo bigint not null,
+dados text);
+
 
 -- 2. CRIANDO USUÁRIOS E PERMISSÕES
 
