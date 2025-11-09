@@ -82,44 +82,12 @@ WSGI_APPLICATION = 'bdedica.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'bdedica',
+        'NAME': 'bdedica_wf',
         'USER': 'django_admin',      
         'PASSWORD': 'django_admin_pass',
         'HOST': 'localhost',
         'PORT': '3306',
-    },
-    'autenticacao_db': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'bdedica',
-        'USER': 'autenticacao',    
-        'PASSWORD': '4312',
-        'HOST': 'localhost',
-        'PORT': '3306',
-    },
-    'orientador_db': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'bdedica',
-        'USER': 'orientador',
-        'PASSWORD': '1234',
-        'HOST': 'localhost',
-        'PORT': '3306',
-    },
-    'coordenador_db': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'bdedica',
-        'USER': 'coordenador',
-        'PASSWORD': '4321',
-        'HOST': 'localhost',
-        'PORT': '3306',
-    },
-    'jij_db': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'bdedica',
-        'USER': 'jij',
-        'PASSWORD': '2143',
-        'HOST': 'localhost',
-        'PORT': '3306',
-    },
+    }
 }
 
 # Password validation

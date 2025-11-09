@@ -1,4 +1,5 @@
-from django.db import connections, IntegrityError, OperationalError
+from django.db import connection, IntegrityError
+from django.db.utils import OperationalError
 from django.contrib.auth.hashers import make_password
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -7,15 +8,9 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .serializers import CustomTokenObtainPairSerializer, UsuarioCreateSerializer
 
-CARGO_TO_DB_CONNECTION = {
-    'ORIENTADOR': 'orientador_db',
-    'COORDENADOR': 'coordenador_db',
-    'JIJ': 'jij_db',
-}
-
 class UsuarioCreateView(generics.CreateAPIView):
     """
-    Endpoint para (apenas) Coordenadores criarem novos usuários.
+    Endpoint para criar novos usuários.
     """
     serializer_class = UsuarioCreateSerializer
     permission_classes = [IsAuthenticated]
@@ -38,18 +33,10 @@ class UsuarioCreateView(generics.CreateAPIView):
             plain_password
         ]
 
-        user_cargo = request.user.cargo
-        connection_name = CARGO_TO_DB_CONNECTION.get(user_cargo)
-
-        if not connection_name:
-            return Response(
-                {"detail": "Cargo do usuário logado não existe."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
         try:
-            with connections[connection_name].cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(sql, params)
+                new_id = cursor.lastrowid
             
             response_data = serializer.validated_data.copy()
             response_data.pop('password')
@@ -59,12 +46,6 @@ class UsuarioCreateView(generics.CreateAPIView):
         
         except (OperationalError, IntegrityError) as e:
             error_message = str(e)
-            
-            if 'command denied' in error_message.lower():
-                return Response(
-                    {"detail": "Permissão negada pelo banco de dados para esta ação."}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
             
             if 'duplicate entry' in error_message.lower():
                 return Response(
