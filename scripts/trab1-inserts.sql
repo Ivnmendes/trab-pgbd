@@ -1,24 +1,23 @@
-use bdedica;
+use bdedica_wf;
 insert into usuario (username, nome, cargo, senha) values 
 	('j.silva', 'João Silva', 'ORIENTADOR', '1234'),
     ('a.braga', 'Ana Braga', 'ORIENTADOR', '1234'),
     ('f.oliveira', 'Fernanda Oliveira', 'COORDENADOR', '4321'),
+    ('b.rodrigues', 'Bruno Rodrigues', 'COORDENADOR', '4321'),
     ('m.souza', 'Mariana Souza', 'JIJ', '2143');
     
+insert into template_processo(nome, descricao) values
+	('Envio de Relatórios', 'Cadastro e validação de relatórios para o JIJ');
     
-insert into adolescente (nome) values
-	('Dionatan Melo'),
-    ('Michele Souza'),
-    ('Stefany Vargas'),
-    ('Enzo Fabio');
-    
-insert into mse (id_adolescente, id_orientador, semanas_totais, semanas_restantes, status_mse) values
-(1, 1, 27, 27, 'EM_ANDAMENTO'),
-(2, 2, 24, 24, 'EM_ANDAMENTO'),
-(3, 1, 27, 27, 'EM_ANDAMENTO'),
-(4, 2, 54, 54, 'EM_ANDAMENTO');
+insert into etapa (id_template, nome, ordem, responsavel) values
+(1, 'Enviado para correção', 1, 'ORIENTADOR'),
+(1, 'Aguarda parecer do coordenador', 2, 'COORDENADOR'),
+(1, 'Aguarda correções no relatório', 3, 'ORIENTADOR'),
+(1, 'Enviado para conclusão', 4, 'JIJ');
 
-insert into relatorio (id_mse, mes, ano, presencas, faltas, relato, status_rel) values
-(2, 'maio', 2024, 1, 3, 'blablablablabla', 'PENDENTE');
-insert into relatorio (id_mse, mes, ano, presencas, faltas, relato, status_rel) values
-(1, 'dezembro', 2025, 4, 0, 'blablablablabla', 'PENDENTE');
+insert into fluxo_execucao (id_origem, id_destino) values
+(1, 2), (2, 3), (2,4), (3,2), (4,4);
+
+insert into modelo_campo(id_etapa, nome_campo, tipo, obrigatorio) values
+(1, 'Relatório', 'ARQUIVO', true),
+(3, 'Relatório', 'ARQUIVO', true);

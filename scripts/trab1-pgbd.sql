@@ -32,7 +32,8 @@ id bigint primary key auto_increment,
 id_template bigint not null,
 nome varchar(100) not null,
 ordem int not null,
-responsavel enum('ORIENTADOR', 'COORDENADOR', 'JIJ'),
+campo_anexo boolean default false,
+responsavel enum('ORIENTADOR', 'COORDENADOR', 'JIJ') not null,
 foreign key (id_template) references template_processo(id)
 );
 
@@ -41,6 +42,7 @@ create table if not exists fluxo_execucao (
 id bigint primary key auto_increment,
 id_origem bigint not null,
 id_destino bigint not null,
+unique (id_origem, id_destino),
 foreign key (id_origem) references etapa(id),
 foreign key (id_destino) references etapa(id));
 
@@ -53,205 +55,156 @@ id_usuario bigint not null,
 observacoes text not null,
 data_inicio datetime default now() not null,
 data_fim datetime,
-status enum('PENDENTE', 'CONCLUIDO') default 'PENDENTE' not null,
+anexo varchar(255),
+status_exec enum('PENDENTE', 'CONCLUIDO') default 'PENDENTE' not null,
 foreign key (id_processo) references processo(id),
 foreign key (id_etapa) references etapa(id),
 foreign key (id_usuario) references usuario(id)
 );
 
--- 1.7. MODELO DE CAMPO PARA CADA ETAPA -- 
-create table if not exists modelo_campo (
-id bigint primary key auto_increment,
-id_etapa bigint not null,
-nome_campo varchar(100) not null,
-tipo enum('TEXTO', 'NUMERO', 'DATA', 'ARQUIVO') not null,
-obrigatorio boolean default false,
-foreign key (id_etapa) references etapa(id)
-);
-
--- 1.8. CAMPO -- 
-create table if not exists campo (
-id bigint primary key auto_increment,
-id_modelo bigint not null,
-id_exec_etapa bigint not null,
-dados text,
-foreign key (id_modelo) references modelo_campo(id),
-foreign key (id_exec_etapa) references execucao_etapa(id)
-);
-
-
--- 2. CRIANDO USUÁRIOS E PERMISSÕES
-
--- 2.1. USUÁRIO ORIENTADOR --
-DROP USER if exists 'orientador'@localhost;
-CREATE USER 'orientador'@localhost IDENTIFIED WITH mysql_native_password BY '1234';
-GRANT SELECT, INSERT, UPDATE ON bdedica.relatorio TO 'orientador'@localhost;
-GRANT SELECT ON bdedica.adolescente TO 'orientador'@localhost;
-GRANT SELECT (id, nome, cargo) ON bdedica.usuario TO 'orientador'@localhost;
-GRANT SELECT ON bdedica.mse TO 'orientador'@localhost;
-FLUSH PRIVILEGES;
-
--- 2.2. USUÁRIO COORDENADOR --
-DROP USER if exists 'coordenador'@localhost;
-CREATE USER 'coordenador'@localhost IDENTIFIED WITH mysql_native_password BY '4321';
-GRANT SELECT, UPDATE, DELETE ON bdedica.* TO 'coordenador'@localhost;
-GRANT INSERT ON bdedica.usuario TO 'coordenador'@localhost;
-GRANT INSERT ON bdedica.mse TO 'coordenador'@localhost;
-GRANT INSERT ON bdedica.adolescente TO 'coordenador'@localhost;
-FLUSH PRIVILEGES;
-
--- 2.3. USUÁRIO JIJ --
-DROP USER if exists 'jij'@localhost;
-CREATE USER 'jij'@localhost IDENTIFIED WITH mysql_native_password BY '2143';
-GRANT SELECT, UPDATE on bdedica.relatorio TO 'jij'@localhost;
-GRANT SELECT on bdedica.adolescente TO 'jij'@localhost;
-GRANT SELECT, UPDATE on bdedica.mse TO 'jij'@localhost;
-GRANT SELECT (id, nome, cargo) ON bdedica.usuario TO 'jij'@localhost;
-FLUSH PRIVILEGES;
-
--- 2.4. USUÁRIO AUTENTICAÇÂO --
-DROP USER if exists 'autenticacao'@localhost;
-CREATE USER 'autenticacao'@localhost IDENTIFIED WITH mysql_native_password BY '4312';
-GRANT SELECT ON bdedica.usuario TO 'autenticacao'@localhost;
-FLUSH PRIVILEGES;
-
--- 2.5. USUÁRIO ADMINISTRADOR --
-DROP USER if exists 'admin'@localhost;
-CREATE USER 'admin'@localhost IDENTIFIED WITH mysql_native_password BY 'django_admin_pass';
-GRANT ALL PRIVILEGES ON bdedica.* TO 'admin'@localhost;
-FLUSH PRIVILEGES;
-
--- 3. FUNCTIONS --
--- 3.1. VERIFICA SE O STATUS DO RELATÓRIO ESTÁ CORRETO --
+-- 2. FUNCTIONS 
+-- 2.1. Verifica se a etapa sendo inserida precisa de anexo -- 
 DELIMITER $$
-CREATE FUNCTION verifica_status(status_atual varchar(50), status_desejado varchar(50))
+CREATE FUNCTION anexoObrigatorio(idEtapa bigint)
 RETURNS BOOLEAN
 DETERMINISTIC
 BEGIN
-    IF status_atual = status_desejado THEN
-		RETURN TRUE;
-	ELSE
-		RETURN FALSE;
-	END IF;
+	DECLARE anexo_obrigatorio boolean default false;
+    
+    select campo_anexo into anexo_obrigatorio
+    from etapa
+    where id = idEtapa
+    limit 1;
+    
+    return anexo_obrigatorio;
+END $$
+
+DELIMITER ;
+
+-- 3. PROCEDURES -- 
+-- 3.1. VERIFICA SE O FLUXO DE EXECUÇÃO ESTÁ OCORRENDO --
+DELIMITER $$
+CREATE PROCEDURE validacaoEtapas(IN novo_id_processo bigint, in novo_id_etapa bigint, in novo_id_usuario bigint, 
+in novo_observacoes text, in novo_anexo varchar(255))
+	BEGIN
+		DECLARE id_ultima_etapa bigint;
+        DECLARE id_etapa_final bigint;
+        DECLARE precisa_anexo boolean;
+        
+        -- vai selecionar a última etapa do processo inserida no banco --
+        select id_etapa into id_ultima_etapa from execucao_etapa
+        where id_processo = novo_id_processo
+        and data_inicio = ( select max(data_inicio) from execucao_etapa
+								where id_processo = novo_id_processo);
+                                
+		-- descobre qual a etapa final do processo -- 
+        select e.id into id_etapa_final 
+		from etapa e join fluxo_execucao f on f.id_origem = e.id
+        where f.id_origem = f.id_destino
+        limit 1;
+        
+        -- verifica se precisa de anexo --
+        SET precisa_anexo = anexoObrigatorio(novo_id_etapa);
+		
+		controle_insert: BEGIN
+		-- se é nulo, é a primeira etapa e não precisa validar a sequência -- 
+		IF id_ultima_etapa IS NOT NULL THEN 
+			-- valida se o fluxo é válido -- 
+			IF NOT EXISTS (select 1 from fluxo_execucao
+									where id_origem = id_ultima_etapa 
+                                    and id_destino = novo_id_etapa) THEN
+				SIGNAL SQLSTATE '45000'
+				SET MESSAGE_TEXT = 'Fluxo inválido: etapa não pode ser executada';
+			END IF;
+				-- confere a obrigatoriedade do anexo --
+                IF precisa_anexo = TRUE and (novo_anexo is null or novo_anexo = '') THEN
+					SIGNAL SQLSTATE '45001'
+                    SET MESSAGE_TEXT = 'Essa etapa exige envio de anexo';
+				END IF;
+            
+            -- se for a última etapa, não cria nova etapa e atualiza o processo como concluído -- 
+            IF id_ultima_etapa = id_etapa_final THEN
+            
+				update execucao_etapa set data_fim = now()
+				where id_etapa = id_ultima_etapa
+				and id_processo = novo_id_processo;
+                
+				update execucao_etapa set status_exec = 'CONCLUIDO'
+				where id_etapa = id_ultima_etapa
+				and id_processo = novo_id_processo;
+                
+                update processo set status_proc = 'CONCLUIDO'
+                where id = novo_id_processo;
+                
+                LEAVE controle_insert;
+			END IF;
+		END IF;
+    
+	INSERT INTO execucao_etapa (id_processo, id_etapa, id_usuario, observacoes)
+    VALUES (novo_id_processo, novo_id_etapa, novo_id_usuario, novo_observacoes);
+    
+    -- depois de inserir a etapa nova, atualiza a anterior como concluída e adiciona a data_fim -- 
+	update execucao_etapa set data_fim = now()
+    where id_etapa = id_ultima_etapa
+    and id_processo = novo_id_processo;
+    
+    update execucao_etapa set status_exec = 'CONCLUIDO'
+    where id_etapa = id_ultima_etapa
+    and id_processo = novo_id_processo;
+		END controle_insert;
 END 
 $$
 DELIMITER ;
-    
+
 -- 4. TRIGGERS --
--- 4.1. GARANTINDO QUE O USUÁRIO INSERIDO EM MSE É UM ORIENTADOR E QUE SEMANAS RESTANTES = SEMANAS TOTAIS -- 
+-- 4.1. VERIFICA SE O USUÁRIO INSERIDO EM EXECUCAO_ETAPA É RESPONSÁVEL PELA ETAPA EM QUESTÃO  -- 
 DELIMITER $$
-CREATE TRIGGER insertMse
-	BEFORE INSERT ON mse
+CREATE TRIGGER insertExecucao
+	BEFORE INSERT ON execucao_etapa
     FOR EACH ROW
     BEGIN
-    DECLARE cargo1 varchar(50);
-    SELECT cargo INTO cargo1 FROM usuario
-    WHERE id = NEW.id_orientador;
-    IF cargo1 != 'ORIENTADOR' THEN
-		SIGNAL SQLSTATE'45000'
-		SET MESSAGE_TEXT = 'Usuário inválido; usuário responsável deve ser um ORIENTADOR';
-	END IF;
-    IF NEW.semanas_restantes != NEW.semanas_totais THEN
-		SIGNAL SQLSTATE'45001'
-		SET MESSAGE_TEXT = 'O número de semanas restantes deve ser igual ao número de semanas totais';
-	END IF;
-END
+		DECLARE cargo_res ENUM('ORIENTADOR', 'COORDENADOR', 'JIJ');
+		DECLARE cargo_user ENUM('ORIENTADOR', 'COORDENADOR', 'JIJ');
+        DECLARE msg_erro varchar(128);
+    
+		SELECT responsavel INTO cargo_res FROM etapa
+		WHERE id = NEW.id_etapa;
+    
+		SELECT cargo INTO cargo_user FROM usuario
+		WHERE id = NEW.id_usuario;
+    
+		IF cargo_user != cargo_res THEN
+			SET msg_erro = CONCAT('Usuário inválido; responsável deve ser um', COALESCE(cargo_res, '[não informado]'));
+			SIGNAL SQLSTATE'45000'
+			SET MESSAGE_TEXT = msg_erro;
+		END IF;
+	END
 $$ 
 DELIMITER ;
 
--- 4.2. GARANTINDO QUE O STATUS DO RELATÓRIO ESTEJA 'PENDENTE' QUANDO É CRIADO -- 
+-- 4.2. TRANSAÇÃO PARA, SE A EXECUÇÃO_ETAPA N. 1 FALHAR, NÃO HAVER INSERÇÃO DE NOVO PROCESSO -- 
 DELIMITER $$
-CREATE TRIGGER insertRel
-	BEFORE INSERT ON relatorio
-    FOR EACH ROW
+CREATE PROCEDURE criacaoProcessoEtapa(in novo_id_template bigint, in novo_id_usuario bigint, 
+in novo_id_etapa bigint, in novo_observacoes text, in novo_anexo varchar(255))
+BEGIN
+	DECLARE novo_id_processo bigint;
+	DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
-    DECLARE p_status boolean;
-    SET p_status = verifica_status(NEW.status_rel,'PENDENTE');
-    
-    IF p_status = FALSE THEN
-		SIGNAL SQLSTATE'45000'
-		SET MESSAGE_TEXT = 'O status inicial de um relatório deve ser PENDENTE';
-	END IF;
-END
-$$ 
-DELIMITER ;
-
--- 4.3. VERIFICAÇÃO DAS PERMISSÕES DE MUDANÇA DE STATUS E CORREÇÃO DO CAMPO OBSERVAÇÕES --
-DELIMITER $$
-
-CREATE TRIGGER updateCorrecao
-BEFORE UPDATE ON relatorio
-FOR EACH ROW
-BEGIN
-    DECLARE usuario_db VARCHAR(50);
-    DECLARE status_atual VARCHAR(50);
-    SET usuario_db = SESSION_USER();
-    
-    SELECT status_rel INTO status_atual FROM relatorio
-    WHERE id = NEW.id;
-
-    IF NEW.status_rel = 'AGUARDA_CORRECOES' THEN
-        IF NEW.observacoes IS NULL OR NEW.observacoes = '' THEN
-            SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'O campo Observações deve ser preenchido para enviar para Correção.';
-        END IF;
-        IF usuario_db NOT LIKE 'coordenador@%' THEN
-            SIGNAL SQLSTATE '45001'
-            SET MESSAGE_TEXT = 'Somente o Coordenador pode encaminhar para Correção.';
-        END IF;
-
-    ELSEIF NEW.status_rel = 'PENDENTE' THEN
-        IF usuario_db NOT LIKE 'orientador@%' THEN
-            SIGNAL SQLSTATE '45002'
-            SET MESSAGE_TEXT = 'Somente o Orientador pode mudar o status para Pendente.';
-        END IF;
-
-    ELSEIF NEW.status_rel = 'ENVIADO' THEN
-        SET NEW.observacoes = NULL;
-        IF usuario_db NOT LIKE 'coordenador@%' THEN
-            SIGNAL SQLSTATE '45003'
-            SET MESSAGE_TEXT = 'Somente o Coordenador pode mudar o status para Enviado.';
-        END IF;
-
-    ELSEIF NEW.status_rel = 'CONCLUIDO' THEN
-        IF usuario_db NOT LIKE 'jij@%' THEN
-            SIGNAL SQLSTATE '45004'
-            SET MESSAGE_TEXT = 'Somente o representante do JIJ pode definir o relatório como Concluído.';
-        END IF;
-        IF status_atual != 'ENVIADO' THEN
-			SIGNAL SQLSTATE '45005'
-            SET MESSAGE_TEXT = 'Um relatório só pode ser concluído após envio pelo Coordenador';
-		END IF;
-    END IF;
-END$$
-
-DELIMITER ;
-
--- 4.4. ATUALIZAÇÃO DAS SEMANAS RESTANTES DA MSE -- 
-DELIMITER $$
-
-CREATE TRIGGER updateMse
-AFTER UPDATE ON relatorio
-FOR EACH ROW
-BEGIN
-	DECLARE num_semanas int;
-    DECLARE restantes int;
-    IF NEW.status_rel = 'CONCLUIDO' THEN
-		SELECT presencas into num_semanas from relatorio
-        WHERE id = NEW.id;
-        SELECT semanas_restantes into restantes from mse
-        WHERE id = NEW.id_mse;
-        UPDATE mse SET semanas_restantes = restantes - num_semanas
-        WHERE id = NEW.id_mse;
+        ROLLBACK;
+        RESIGNAL;
+    END;
         
-        IF restantes - num_semanas <= 0 THEN
-			UPDATE mse SET status_mse = 'CONCLUIDA'
-            WHERE id = NEW.id_mse;
-		END IF;
+START TRANSACTION;
+	insert into processo (id_template, id_usuario) values
+	(novo_id_template, novo_id_usuario); 
+    
+    SET novo_id_processo = LAST_INSERT_ID();
         
-	END IF;
-END$$
-
+	CALL validacaoEtapas(novo_id_processo, novo_id_etapa, novo_id_usuario, novo_observacoes, novo_anexo);
+    
+    COMMIT;
+    
+END $$
 DELIMITER ;
 
 -- AUXILIARES -- 
