@@ -50,7 +50,7 @@ id bigint primary key auto_increment,
 id_processo bigint not null,
 id_etapa bigint not null,
 id_usuario bigint not null,
-observacoes text,
+observacoes text not null,
 data_inicio datetime default now() not null,
 data_fim datetime,
 status_exec enum('PENDENTE', 'CONCLUIDO') default 'PENDENTE' not null,
@@ -75,8 +75,25 @@ id bigint primary key auto_increment,
 id_modelo bigint not null,
 dados text);
 
--- 2. FUNCTIONS  E PROCEDURES --
--- 2.1. VERIFICA SE O FLUXO DE EXECUÇÃO ESTÁ OCORRENDO --
+-- 2. FUNCTIONS 
+-- 2.1. Verifica o número de campos obrigatórios 
+DELIMITER $$
+CREATE FUNCTION numCamposObrigatorios(novo_id_etapa bigint) RETURNS int
+DETERMINISTIC
+BEGIN 
+	DECLARE campoObrigatorio int default 0;
+        
+	select count(*) into campoObrigatorio from modelo_campo
+	where id_etapa = novo_id_etapa
+	and obrigatorio = true;
+                                   
+        return campoObrigatorio;
+END
+$$
+DELIMITER ;
+
+-- 3. PROCEDURES -- 
+-- 3.1. VERIFICA SE O FLUXO DE EXECUÇÃO ESTÁ OCORRENDO --
 DELIMITER $$
 CREATE PROCEDURE validacaoEtapas(IN novo_id_processo bigint, in novo_id_etapa bigint, in novo_id_usuario bigint, in novo_observacoes text)
 	BEGIN
@@ -140,6 +157,8 @@ END
 $$
 DELIMITER ;
     
+-- 3.2.  --
+
 -- 4. TRIGGERS --
 -- 4.1. VERIFICA SE O USUÁRIO INSERIDO EM EXECUCAO_ETAPA É RESPONSÁVEL PELA ETAPA EM QUESTÃO  -- 
 DELIMITER $$
@@ -166,6 +185,29 @@ CREATE TRIGGER insertExecucao
 $$ 
 DELIMITER ;
 
--- TRANSAÇÃO PARA, SE A EXECUÇÃO_ETAPA N. 1 FALHAR, NÃO HAVER INSERÇÃO DE NOVO PROCESSO -- 
+-- 4.2. TRANSAÇÃO PARA, SE A EXECUÇÃO_ETAPA N. 1 FALHAR, NÃO HAVER INSERÇÃO DE NOVO PROCESSO -- 
+DELIMITER $$
+CREATE PROCEDURE criacaoProcessoEtapa(in novo_id_template bigint, in novo_id_usuario bigint, 
+in novo_id_etapa bigint, in novo_observacoes text)
+BEGIN
+	DECLARE novo_id_processo bigint;
+	DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+        
+START TRANSACTION;
+	insert into processo (id_template, id_usuario) values
+	(novo_id_template, novo_id_usuario); 
+    
+    SET novo_id_processo = LAST_INSERT_ID();
+        
+	CALL validacaoEtapas(novo_id_processo, novo_id_etapa, novo_id_usuario, novo_observacoes);
+    
+    COMMIT;
+    
+END $$
+DELIMITER ;
 
 -- AUXILIARES -- 
