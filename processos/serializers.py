@@ -29,6 +29,7 @@ class EtapaSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
     ordem = serializers.IntegerField()
     responsavel = serializers.CharField(max_length=100)
+    campo_anexo = serializers.BooleanField(default=False)
 
 
 class FluxoExecucaoSerializer(serializers.Serializer):
@@ -38,27 +39,6 @@ class FluxoExecucaoSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     id_origem = serializers.IntegerField()
     id_destino = serializers.IntegerField()
-
-
-class ModeloCampoSerializer(serializers.Serializer):
-    """
-    Valida os dados para criação e atualização de um ModeloCampo.
-    """
-    id = serializers.IntegerField(read_only=True)
-    id_etapa = serializers.IntegerField()
-    nome_campo = serializers.CharField(max_length=255)
-    tipo = serializers.CharField(max_length=100)
-    obrigatorio = serializers.BooleanField()
-
-
-class CampoSerializer(serializers.Serializer):
-    """
-    Valida os dados para criação e atualização de um CampoPreenchido.
-    """
-    id = serializers.IntegerField(read_only=True)
-    id_modelo = serializers.IntegerField()
-    id_exec_etapa = serializers.IntegerField()
-    dados = serializers.CharField(allow_blank=True, required=False)
 
 
 class ExecucaoEtapaSerializer(serializers.Serializer):

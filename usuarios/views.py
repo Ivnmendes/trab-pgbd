@@ -1,4 +1,5 @@
-from django.db import connection, IntegrityError, OperationalError
+from django.db import connection, IntegrityError
+from django.db.utils import OperationalError
 from django.contrib.auth.hashers import make_password
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -9,7 +10,7 @@ from .serializers import CustomTokenObtainPairSerializer, UsuarioCreateSerialize
 
 class UsuarioCreateView(generics.CreateAPIView):
     """
-    Endpoint para (apenas) Coordenadores criarem novos usuários.
+    Endpoint para criar novos usuários.
     """
     serializer_class = UsuarioCreateSerializer
     permission_classes = [IsAuthenticated]
@@ -35,6 +36,7 @@ class UsuarioCreateView(generics.CreateAPIView):
         try:
             with connection.cursor() as cursor:
                 cursor.execute(sql, params)
+                new_id = cursor.lastrowid
             
             response_data = serializer.validated_data.copy()
             response_data.pop('password')
@@ -44,12 +46,6 @@ class UsuarioCreateView(generics.CreateAPIView):
         
         except (OperationalError, IntegrityError) as e:
             error_message = str(e)
-            
-            if 'command denied' in error_message.lower():
-                return Response(
-                    {"detail": "Permissão negada pelo banco de dados para esta ação."}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
             
             if 'duplicate entry' in error_message.lower():
                 return Response(

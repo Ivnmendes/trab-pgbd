@@ -1,5 +1,5 @@
 # usuarios/serializers.py
-from django.db import connections
+from django.db import connection
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework import serializers
@@ -21,7 +21,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         password = attrs.get('password')
         
         try:
-            with connections['autenticacao_db'].cursor() as cursor: 
+            with connection.cursor() as cursor: 
                 sql_query = """
                     SELECT 
                         id, 
