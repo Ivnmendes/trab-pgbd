@@ -32,7 +32,8 @@ id bigint primary key auto_increment,
 id_template bigint not null,
 nome varchar(100) not null,
 ordem int not null,
-responsavel enum('ORIENTADOR', 'COORDENADOR', 'JIJ'),
+campo_anexo boolean default false,
+responsavel enum('ORIENTADOR', 'COORDENADOR', 'JIJ') not null,
 foreign key (id_template) references template_processo(id)
 );
 
@@ -41,6 +42,7 @@ create table if not exists fluxo_execucao (
 id bigint primary key auto_increment,
 id_origem bigint not null,
 id_destino bigint not null,
+unique (id_origem, id_destino),
 foreign key (id_origem) references etapa(id),
 foreign key (id_destino) references etapa(id));
 
@@ -53,52 +55,41 @@ id_usuario bigint not null,
 observacoes text not null,
 data_inicio datetime default now() not null,
 data_fim datetime,
+anexo varchar(255),
 status_exec enum('PENDENTE', 'CONCLUIDO') default 'PENDENTE' not null,
 foreign key (id_processo) references processo(id),
 foreign key (id_etapa) references etapa(id),
 foreign key (id_usuario) references usuario(id)
 );
 
--- 1.7. MODELO DE CAMPO PARA CADA ETAPA -- 
-create table if not exists modelo_campo (
-id bigint primary key auto_increment,
-id_etapa bigint not null,
-nome_campo varchar(100) not null,
-tipo enum('TEXTO', 'NUMERO', 'DATA', 'ARQUIVO') not null,
-obrigatorio boolean default false,
-foreign key (id_etapa) references etapa(id)
-);
-
--- 1.8. CAMPO -- 
-create table if not exists campo (
-id bigint primary key auto_increment,
-id_modelo bigint not null,
-dados text);
-
 -- 2. FUNCTIONS 
--- 2.1. Verifica o número de campos obrigatórios 
+-- 2.1. Verifica se a etapa sendo inserida precisa de anexo -- 
 DELIMITER $$
-CREATE FUNCTION numCamposObrigatorios(novo_id_etapa bigint) RETURNS int
+CREATE FUNCTION anexoObrigatorio(idEtapa bigint)
+RETURNS BOOLEAN
 DETERMINISTIC
-BEGIN 
-	DECLARE campoObrigatorio int default 0;
-        
-	select count(*) into campoObrigatorio from modelo_campo
-	where id_etapa = novo_id_etapa
-	and obrigatorio = true;
-                                   
-        return campoObrigatorio;
-END
-$$
+BEGIN
+	DECLARE anexo_obrigatorio boolean default false;
+    
+    select campo_anexo into anexo_obrigatorio
+    from etapa
+    where id = idEtapa
+    limit 1;
+    
+    return anexo_obrigatorio;
+END $$
+
 DELIMITER ;
 
 -- 3. PROCEDURES -- 
 -- 3.1. VERIFICA SE O FLUXO DE EXECUÇÃO ESTÁ OCORRENDO --
 DELIMITER $$
-CREATE PROCEDURE validacaoEtapas(IN novo_id_processo bigint, in novo_id_etapa bigint, in novo_id_usuario bigint, in novo_observacoes text)
+CREATE PROCEDURE validacaoEtapas(IN novo_id_processo bigint, in novo_id_etapa bigint, in novo_id_usuario bigint, 
+in novo_observacoes text, in novo_anexo varchar(255))
 	BEGIN
 		DECLARE id_ultima_etapa bigint;
         DECLARE id_etapa_final bigint;
+        DECLARE precisa_anexo boolean;
         
         -- vai selecionar a última etapa do processo inserida no banco --
         select id_etapa into id_ultima_etapa from execucao_etapa
@@ -111,6 +102,9 @@ CREATE PROCEDURE validacaoEtapas(IN novo_id_processo bigint, in novo_id_etapa bi
 		from etapa e join fluxo_execucao f on f.id_origem = e.id
         where f.id_origem = f.id_destino
         limit 1;
+        
+        -- verifica se precisa de anexo --
+        SET precisa_anexo = anexoObrigatorio(novo_id_etapa);
 		
 		controle_insert: BEGIN
 		-- se é nulo, é a primeira etapa e não precisa validar a sequência -- 
@@ -122,6 +116,11 @@ CREATE PROCEDURE validacaoEtapas(IN novo_id_processo bigint, in novo_id_etapa bi
 				SIGNAL SQLSTATE '45000'
 				SET MESSAGE_TEXT = 'Fluxo inválido: etapa não pode ser executada';
 			END IF;
+				-- confere a obrigatoriedade do anexo --
+                IF precisa_anexo = TRUE and (novo_anexo is null or novo_anexo = '') THEN
+					SIGNAL SQLSTATE '45001'
+                    SET MESSAGE_TEXT = 'Essa etapa exige envio de anexo';
+				END IF;
             
             -- se for a última etapa, não cria nova etapa e atualiza o processo como concluído -- 
             IF id_ultima_etapa = id_etapa_final THEN
@@ -156,8 +155,6 @@ CREATE PROCEDURE validacaoEtapas(IN novo_id_processo bigint, in novo_id_etapa bi
 END 
 $$
 DELIMITER ;
-    
--- 3.2.  --
 
 -- 4. TRIGGERS --
 -- 4.1. VERIFICA SE O USUÁRIO INSERIDO EM EXECUCAO_ETAPA É RESPONSÁVEL PELA ETAPA EM QUESTÃO  -- 
@@ -188,7 +185,7 @@ DELIMITER ;
 -- 4.2. TRANSAÇÃO PARA, SE A EXECUÇÃO_ETAPA N. 1 FALHAR, NÃO HAVER INSERÇÃO DE NOVO PROCESSO -- 
 DELIMITER $$
 CREATE PROCEDURE criacaoProcessoEtapa(in novo_id_template bigint, in novo_id_usuario bigint, 
-in novo_id_etapa bigint, in novo_observacoes text)
+in novo_id_etapa bigint, in novo_observacoes text, in novo_anexo varchar(255))
 BEGIN
 	DECLARE novo_id_processo bigint;
 	DECLARE EXIT HANDLER FOR SQLEXCEPTION
@@ -203,7 +200,7 @@ START TRANSACTION;
     
     SET novo_id_processo = LAST_INSERT_ID();
         
-	CALL validacaoEtapas(novo_id_processo, novo_id_etapa, novo_id_usuario, novo_observacoes);
+	CALL validacaoEtapas(novo_id_processo, novo_id_etapa, novo_id_usuario, novo_observacoes, novo_anexo);
     
     COMMIT;
     
