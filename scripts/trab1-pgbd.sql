@@ -23,7 +23,7 @@ id_template bigint not null,
 id_usuario bigint not null,
 status_proc enum('PENDENTE', 'CONCLUIDO') default 'PENDENTE' not null,
 data_inicio datetime default NOW() not null,
-foreign key (id_template) references template_processo(id),
+foreign key (id_template) references template_processo(id) ON DELETE CASCADE,
 foreign key (id_usuario) references usuario(id));
 
 -- 1.4. ETAPA -- 
@@ -34,7 +34,7 @@ nome varchar(100) not null,
 ordem int not null,
 campo_anexo boolean default false,
 responsavel enum('ORIENTADOR', 'COORDENADOR', 'JIJ') not null,
-foreign key (id_template) references template_processo(id)
+foreign key (id_template) references template_processo(id) ON DELETE CASCADE
 );
 
 -- 1.5. FLUXO DE EXECUÇÃO DE ETAPAS --
@@ -43,8 +43,9 @@ id bigint primary key auto_increment,
 id_origem bigint not null,
 id_destino bigint not null,
 unique (id_origem, id_destino),
-foreign key (id_origem) references etapa(id),
-foreign key (id_destino) references etapa(id));
+foreign key (id_origem) references etapa(id) ON DELETE CASCADE,
+foreign key (id_destino) references etapa(id) ON DELETE CASCADE
+);
 
 -- 1.6. ETAPAS EM EXECUÇÃO --
 create table if not exists execucao_etapa (
@@ -57,8 +58,8 @@ data_inicio datetime default now() not null,
 data_fim datetime,
 anexo varchar(255),
 status_exec enum('PENDENTE', 'CONCLUIDO') default 'PENDENTE' not null,
-foreign key (id_processo) references processo(id),
-foreign key (id_etapa) references etapa(id),
+foreign key (id_processo) references processo(id) ON DELETE CASCADE,
+foreign key (id_etapa) references etapa(id) ON DELETE CASCADE,
 foreign key (id_usuario) references usuario(id)
 );
 
@@ -210,3 +211,13 @@ DELIMITER ;
 -- 5. VIEWS --
 CREATE VIEW v_etapa_processo AS (SELECT tp.id as 'id_template',tp.nome as 'nome_processo', e.id as 'id_etapa', e.nome as 'nome_etapa'
 from template_processo tp join etapa e on tp.id = e.id_template);
+-- AUXILIARES -- 
+
+-- Insere usuário admin do banco --
+CREATE USER IF NOT EXISTS 'django_admin'@'%' IDENTIFIED BY 'django_admin_pass';
+GRANT ALL PRIVILEGES ON bdedica_wf.* TO 'django_admin'@'%';
+FLUSH PRIVILEGES;
+
+-- Insere o usuário inicial --
+INSERT INTO usuario (username, nome, cargo, senha) VALUES 
+('admin', 'Administrador do Sistema', 'JIJ', '123456789');
