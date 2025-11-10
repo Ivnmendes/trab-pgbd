@@ -73,7 +73,7 @@ DATABASES = {
 ### 6. Aplicar as Migrações do Banco de Dados
 
 ```bash
-python manage.py migrate
+python manage.py migrate --fake-initial
 ```
 
 Execute sempre que houver mudanças nos modelos/no início do projeto. Sempre após criar as migrations.
