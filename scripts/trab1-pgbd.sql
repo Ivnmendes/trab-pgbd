@@ -156,33 +156,7 @@ END
 $$
 DELIMITER ;
 
--- 4. TRIGGERS --
--- 4.1. VERIFICA SE O USUÁRIO INSERIDO EM EXECUCAO_ETAPA É RESPONSÁVEL PELA ETAPA EM QUESTÃO  -- 
-DELIMITER $$
-CREATE TRIGGER insertExecucao
-	BEFORE INSERT ON execucao_etapa
-    FOR EACH ROW
-    BEGIN
-		DECLARE cargo_res ENUM('ORIENTADOR', 'COORDENADOR', 'JIJ');
-		DECLARE cargo_user ENUM('ORIENTADOR', 'COORDENADOR', 'JIJ');
-        DECLARE msg_erro varchar(128);
-    
-		SELECT responsavel INTO cargo_res FROM etapa
-		WHERE id = NEW.id_etapa;
-    
-		SELECT cargo INTO cargo_user FROM usuario
-		WHERE id = NEW.id_usuario;
-    
-		IF cargo_user != cargo_res THEN
-			SET msg_erro = CONCAT('Usuário inválido; responsável deve ser um', COALESCE(cargo_res, '[não informado]'));
-			SIGNAL SQLSTATE'45000'
-			SET MESSAGE_TEXT = msg_erro;
-		END IF;
-	END
-$$ 
-DELIMITER ;
-
--- 4.2. TRANSAÇÃO PARA, SE A EXECUÇÃO_ETAPA N. 1 FALHAR, NÃO HAVER INSERÇÃO DE NOVO PROCESSO -- 
+-- 3.2. TRANSAÇÃO PARA, SE A EXECUÇÃO_ETAPA N. 1 FALHAR, NÃO HAVER INSERÇÃO DE NOVO PROCESSO -- 
 DELIMITER $$
 CREATE PROCEDURE criacaoProcessoEtapa(in novo_id_template bigint, in novo_id_usuario bigint, 
 in novo_id_etapa bigint, in novo_observacoes text, in novo_anexo varchar(255))
@@ -207,4 +181,32 @@ START TRANSACTION;
 END $$
 DELIMITER ;
 
--- AUXILIARES -- 
+-- 4. TRIGGERS --
+-- 4.1. VERIFICA SE O USUÁRIO INSERIDO EM EXECUCAO_ETAPA É RESPONSÁVEL PELA ETAPA EM QUESTÃO  -- 
+DELIMITER $$
+CREATE TRIGGER insertExecucao
+	BEFORE INSERT ON execucao_etapa
+    FOR EACH ROW
+    BEGIN
+		DECLARE cargo_res ENUM('ORIENTADOR', 'COORDENADOR', 'JIJ');
+		DECLARE cargo_user ENUM('ORIENTADOR', 'COORDENADOR', 'JIJ');
+        DECLARE msg_erro varchar(128);
+    
+		SELECT responsavel INTO cargo_res FROM etapa
+		WHERE id = NEW.id_etapa;
+    
+		SELECT cargo INTO cargo_user FROM usuario
+		WHERE id = NEW.id_usuario;
+    
+		IF cargo_user != cargo_res THEN
+			SET msg_erro = CONCAT('Usuário inválido; responsável deve ser um', COALESCE(cargo_res, '[não informado]'));
+			SIGNAL SQLSTATE'45000'
+			SET MESSAGE_TEXT = msg_erro;
+		END IF;
+	END  
+$$ 
+DELIMITER ;
+
+-- 5. VIEWS --
+CREATE VIEW v_etapa_processo AS (SELECT tp.id as 'id_template',tp.nome as 'nome_processo', e.id as 'id_etapa', e.nome as 'nome_etapa'
+from template_processo tp join etapa e on tp.id = e.id_template);

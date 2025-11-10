@@ -58,10 +58,15 @@ where p.id in (select id_processo from execucao_etapa where
 				id_usuario = 1  -- botar a variável do usuário aqui
                 and status_exec = 'PENDENTE'); 
                 
+-- mesma consulta, mas com visão --
+select p.id as 'Id Processo', v1.nome_processo as 'Tipo Processo', u.nome as 'Processo iniciado por', p.status_proc as 'Status',
+p.data_inicio as 'Iniciado em', v1.nome_etapa as 'Etapa Pendente' from processo p join v_etapa_processo v1 on p.id_template = v1.id_template
+join usuario u on p.id_usuario = u.id join execucao_etapa ee on ee.id_processo = p.id and ee.id_etapa = v1.id_etapa
+where ee.id_usuario = 1 and ee.status_exec = 'PENDENTE'; -- botar a variável do usuário aqui
+                
 -- 2. TELA DE ETAPAS DO PROCESSO (abre um processo e mostra todas as etapas do processo -- 
 select e.nome as 'Etapa', u.nome as 'Encaminhado por', ee.status_exec as 'Status', ee.data_inicio as 'Data Início',
 ee.data_fim as 'Data Fim', ee.observacoes as 'Mensagem' from etapa e join execucao_etapa ee on e.id = ee.id_etapa
 join usuario u on u.id = ee.id_usuario 
 where id_processo = 5
 order by status_exec, data_fim desc; 
-
