@@ -456,25 +456,24 @@ class ExecucaoEtapaViewSet(viewsets.ReadOnlyModelViewSet):
         id_usuario = request.user.id
         
         query = """
-            SELECT p.id as 'Id_Processo', tp.nome as 'Tipo_Processo', 
-                   u.nome as 'Processo_iniciado_por', p.status_proc as 'Status',
-                   p.data_inicio as 'Iniciado_em', e.nome as 'Etapa_Pendente' 
+            SELECT ee.id AS id_exec,
+                   p.id AS Id_Processo,
+                   tp.nome AS Tipo_Processo,
+                   u.nome AS Processo_iniciado_por,
+                   p.status_proc AS Status,
+                   p.data_inicio AS Iniciado_em,
+                   e.nome AS Etapa_Pendente
             FROM processo p 
             JOIN template_processo tp ON p.id_template = tp.id
             JOIN usuario u ON p.id_usuario = u.id 
             JOIN execucao_etapa ee ON ee.id_processo = p.id 
             JOIN etapa e ON e.id = ee.id_etapa
             WHERE ee.id_usuario = %s AND ee.status_exec = 'PENDENTE'
-            AND p.id IN (
-                SELECT id_processo 
-                FROM execucao_etapa 
-                WHERE id_usuario = %s AND status_exec = 'PENDENTE'
-            )
         """
-        
+
         try:
             with connection.cursor() as cursor:
-                cursor.execute(query, [id_usuario, id_usuario])
+                cursor.execute(query, [id_usuario])
                 execucoes = dictfetchall(cursor)
             return Response(execucoes, status=status.HTTP_200_OK)
         except Exception as e:
